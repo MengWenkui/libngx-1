@@ -7,8 +7,8 @@ libngx, a general c library builded from Nginx core code.
 Build and Install
 =====
 
-    git clone git://github.com/guiquanz/libgnx.git
-    cd libgnx
+    git clone git://github.com/guiquanz/libngx.git
+    cd libngx
     ./configure
     make && make install
 
