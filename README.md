@@ -1,7 +1,7 @@
 Name
 ======
 
-libngx, a general c library builded from Nginx core code.
+libngx, a general c library builded from Nginx core codes.
 
 
 Build and Install
@@ -9,8 +9,15 @@ Build and Install
 
     git clone git://github.com/guiquanz/libngx.git
     cd libngx
-    ./configure
+    ./configure --prefix=/usr/local
     make && make install
+
+
+Test
+=====
+
+    cd examples
+    make all LIBNGX\_BASE\_DIR=/usr/local 
 
 
 Author
@@ -27,7 +34,9 @@ This module is licensed under the BSD license.
 Copyright (c) 2012 by GuiQuan "guiquanz" Zhang (张桂权).  <guiqzhang@gmail.com>.  
 
 Copyright (C) 2002-2012 Igor Sysoev
+
 Copyright (C) 2011,2012 Nginx, Inc.
+
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:

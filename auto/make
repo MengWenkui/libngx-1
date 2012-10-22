@@ -25,7 +25,7 @@ CPP =	$CPP
 LINK =	$LINK
 
 # just for libngx on *nix
-AR = ar rcu
+AR = ar -rcu
 RANLIB= ranlib
 
 END
@@ -71,6 +71,8 @@ do
         ngx_lib_depfs="$ngx_lib_depfs $core_depf "
     fi
 done
+
+ngx_lib_depfs="$ngx_lib_depfs $NGX_AUTO_CONFIG_H $NGX_AUTO_HEADERS_H $NGX_PCH"
 
 ngx_lib_depfs=`echo $ngx_lib_depfs \
     | sed -e "s/  *\([^ ][^ ]*\)/$ngx_regex_cont\1/g" \
@@ -237,7 +239,7 @@ ngx_lib_deps=`echo $ngx_lib_objs \
 cat << END                                                    >> $NGX_MAKEFILE
 
 $NGX_OBJS${ngx_dirsep}libngx${ngx_libext}:	$ngx_lib_deps$ngx_spacer
-	\$(AR) ${ngx_long_start}$NGX_OBJS${ngx_dirsep}libngx${ngx_libext}$ngx_long_cont$ngx_lib_deps
+	\$(AR) ${ngx_long_start}$NGX_OBJS${ngx_dirsep}libngx${ngx_libext}$ngx_long_cont$ngx_lib_deps$ngx_spacer
 	\$(RANLIB) $NGX_OBJS${ngx_dirsep}libngx${ngx_libext}
 ${ngx_long_end}
 
