@@ -11,6 +11,7 @@ ngx_objout="-o "
 ngx_binout="-o "
 ngx_objext="o"
 ngx_binext=
+
 # just for libngx on *nix, Win* is not supported.
 ngx_libext=".a"
 

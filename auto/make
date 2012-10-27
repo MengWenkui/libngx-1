@@ -64,13 +64,14 @@ ngx_incs=`echo $CORE_INCS $NGX_OBJS \
     | sed -e "s/  *\([^ ][^ ]*\)/$ngx_regex_cont$ngx_include_opt\1/g" \
           -e "s/\//$ngx_regex_dirsep/g"`
 
-ngx_lib_depfs=
-for core_depf in $CORE_DEPS
-do
-    if [ $core_depf != "src${ngx_dirsep}core${ngx_dirsep}nginx.h" ]; then
-        ngx_lib_depfs="$ngx_lib_depfs $core_depf "
-    fi
-done
+ngx_lib_depfs=$CORE_DEPS
+
+#for core_depf in $CORE_DEPS
+#do
+#    if [ $core_depf != "src${ngx_dirsep}core${ngx_dirsep}nginx.h" ]; then
+#        ngx_lib_depfs="$ngx_lib_depfs $core_depf "
+#    fi
+#done
 
 ngx_lib_depfs="$ngx_lib_depfs $NGX_AUTO_CONFIG_H $NGX_AUTO_HEADERS_H $NGX_PCH"
 
@@ -232,6 +233,7 @@ ngx_lib_objs=`echo $ngx_lib_srcs \
           -e "s#\([^ ]*\.\)c#$NGX_OBJS\/\1$ngx_objext#g" \
           -e "s#\([^ ]*\.\)S#$NGX_OBJS\/\1$ngx_objext#g"`
 
+#ngx_lib_deps=`echo $ngx_lib_objs $ngx_modules_obj\
 ngx_lib_deps=`echo $ngx_lib_objs \
     | sed -e "s/  *\([^ ][^ ]*\)/$ngx_regex_cont\1/g" \
           -e "s/\//$ngx_regex_dirsep/g"`
