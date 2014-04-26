@@ -321,7 +321,7 @@ ngx_http_gzip_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_gzip_filter_module);
 
-    if (ctx == NULL || ctx->done) {
+    if (ctx == NULL || ctx->done || r->header_only) {
         return ngx_http_next_body_filter(r, in);
     }
 
@@ -368,9 +368,11 @@ ngx_http_gzip_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
         if (ngx_chain_add_copy(r->pool, &ctx->in, in) != NGX_OK) {
             goto failed;
         }
+
+        r->connection->buffered |= NGX_HTTP_GZIP_BUFFERED;
     }
 
-    if (ctx->nomem) {
+    if (ctx->nomem || in == NULL) {
 
         /* flush busy buffers */
 
@@ -497,6 +499,10 @@ ngx_http_gzip_filter_memory(ngx_http_request_t *r, ngx_http_gzip_ctx_t *ctx)
         while (r->headers_out.content_length_n < ((1 << (wbits - 1)) - 262)) {
             wbits--;
             memlevel--;
+        }
+
+        if (memlevel < 1) {
+            memlevel = 1;
         }
     }
 
@@ -847,6 +853,8 @@ ngx_http_gzip_filter_deflate(ngx_http_request_t *r, ngx_http_gzip_ctx_t *ctx)
         cl->next = NULL;
         *ctx->last_out = cl;
         ctx->last_out = &cl->next;
+
+        r->connection->buffered &= ~NGX_HTTP_GZIP_BUFFERED;
 
         return NGX_OK;
     }

@@ -47,5 +47,8 @@ cat << END > Makefile
 default:	build
 
 clean:
-	rm -rf Makefile $NGX_OBJS ./*~ ./*/*~ ./*/*/*~ ./*/*/*/*~ ./*/*/*/*/*~ ./*/*/*/*/*/*~
+	rm -rf Makefile $NGX_OBJS
+	find . -name \*~ -type f | xargs rm -f
+	find . -name \*.bak -type f | xargs rm -f
+
 END

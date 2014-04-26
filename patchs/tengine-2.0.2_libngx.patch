@@ -1,0 +1,310 @@
+diff -urN a/auto/cc/conf b/auto/cc/conf
+--- a/auto/cc/conf	2014-03-28 15:30:28.000000000 +0800
++++ b/auto/cc/conf	2014-04-07 15:41:54.923565586 +0800
+@@ -12,6 +12,9 @@
+ ngx_objext="o"
+ ngx_binext=
+ 
++# just for libngx on *nix, Win* is not supported.
++ngx_libext=".a"
++
+ ngx_long_start=
+ ngx_long_end=
+ 
+diff -urN a/auto/feature b/auto/feature
+--- a/auto/feature	2014-03-28 15:30:28.000000000 +0800
++++ b/auto/feature	2014-04-07 15:43:06.800666999 +0800
+@@ -120,4 +120,4 @@
+     echo "----------"    >> $NGX_AUTOCONF_ERR
+ fi
+ 
+-rm $NGX_AUTOTEST*
++rm -rf $NGX_AUTOTEST*
+diff -urN a/auto/include b/auto/include
+--- a/auto/include	2014-03-28 15:30:28.000000000 +0800
++++ b/auto/include	2014-04-07 15:43:21.991477088 +0800
+@@ -58,4 +58,4 @@
+     echo "----------"    >> $NGX_AUTOCONF_ERR
+ fi
+ 
+-rm $NGX_AUTOTEST*
++rm -rf $NGX_AUTOTEST*
+diff -urN a/auto/init b/auto/init
+--- a/auto/init	2014-03-28 15:30:28.000000000 +0800
++++ b/auto/init	2014-04-07 15:42:28.330147947 +0800
+@@ -51,4 +51,7 @@
+ 
+ clean:
+ 	rm -rf Makefile $NGX_OBJS
++	find . -name \*~ -type f | xargs rm -f
++	find . -name \*.bak -type f | xargs rm -f
++
+ END
+diff -urN a/auto/install b/auto/install
+--- a/auto/install	2014-03-28 15:30:28.000000000 +0800
++++ b/auto/install	2014-04-07 17:23:23.905442838 +0800
+@@ -176,6 +176,7 @@
+ cat << END                                                    >> $NGX_MAKEFILE
+ 
+ install:	$NGX_OBJS${ngx_dirsep}nginx${ngx_binext} \
++		$NGX_OBJS${ngx_dirsep}libngx${ngx_libext} \
+ 		$NGX_INSTALL_PERL_MODULES
+ END
+ 
+@@ -233,6 +234,17 @@
+ 
+ 	test -d '\$(DESTDIR)$NGX_PREFIX/html' \
+ 		|| cp -R $NGX_HTML '\$(DESTDIR)$NGX_PREFIX'
++
++	test -d '\$(DESTDIR)$NGX_PREFIX/lib' \
++		|| mkdir -p '\$(DESTDIR)$NGX_PREFIX/lib'
++
++	cp $NGX_OBJS${ngx_dirsep}libngx${ngx_libext} '\$(DESTDIR)$NGX_PREFIX/lib'
++
++	test -d '\$(DESTDIR)$NGX_PREFIX/include' \
++		|| mkdir -p '\$(DESTDIR)$NGX_PREFIX/include'
++
++	cp $ngx_lib_depfs '\$(DESTDIR)$NGX_PREFIX/include'
++	cp $NGX_OBJS/ngx_shared_config.h '\$(DESTDIR)$NGX_PREFIX/include'
+ END
+ 
+ 
+@@ -340,6 +352,7 @@
+ 
+ build:
+ 	\$(MAKE) -f $NGX_MAKEFILE
++	\$(MAKE) -f $NGX_MAKEFILE $NGX_OBJS${ngx_dirsep}libngx${ngx_libext}
+ 	\$(MAKE) -f $NGX_MAKEFILE manpage
+ 
+ test:
+diff -urN a/auto/make b/auto/make
+--- a/auto/make	2014-03-28 15:30:28.000000000 +0800
++++ b/auto/make	2014-04-07 17:46:06.001414295 +0800
+@@ -53,6 +53,10 @@
+ CPP =	$CPP
+ LINK =	$LINK
+ 
++# just for libngx on *nix
++AR = ar -rcu
++RANLIB= ranlib
++
+ END
+ 
+ 
+@@ -76,7 +80,7 @@
+ 
+ dso_all_incs=$ngx_include_opt$ngx_incs
+ 
+-
++ngx_core_srcs="$CORE_SRCS"
+ ngx_all_srcs="$CORE_SRCS"
+ 
+ 
+@@ -90,6 +94,21 @@
+     | sed -e "s/  *\([^ ][^ ]*\)/$ngx_regex_cont$ngx_include_opt\1/g" \
+           -e "s/\//$ngx_regex_dirsep/g"`
+ 
++ngx_lib_depfs=$CORE_DEPS
++
++#for core_depf in $CORE_DEPS
++#do
++#    if [ $core_depf != "src${ngx_dirsep}core${ngx_dirsep}nginx.h" ]; then
++#        ngx_lib_depfs="$ngx_lib_depfs $core_depf "
++#    fi
++#done
++
++ngx_lib_depfs="$ngx_lib_depfs $NGX_AUTO_CONFIG_H $NGX_AUTO_HEADERS_H $NGX_PCH"
++
++ngx_lib_depfs=`echo $ngx_lib_depfs \
++    | sed -e "s/  *\([^ ][^ ]*\)/$ngx_regex_cont\1/g" \
++          -e "s/\//$ngx_regex_dirsep/g"`
++
+ cat << END                                                    >> $NGX_MAKEFILE
+ 
+ CORE_DEPS = $ngx_deps
+@@ -236,18 +255,46 @@
+ 
+ cat << END                                                    >> $NGX_MAKEFILE
+ 
+-all:	$NGX_OBJS${ngx_dirsep}nginx${ngx_binext} $ngx_dso_target
++all:	$NGX_OBJS${ngx_dirsep}nginx${ngx_binext} $NGX_OBJS${ngx_dirsep}libngx${ngx_libext} $ngx_dso_target
+ 	
+ END
+ 
+ fi
+ 
++# libngx
++
++ngx_core_srcs=`echo $ngx_core_srcs | sed -e "s/\//$ngx_regex_dirsep/g"`
++
++ngx_lib_srcs=
++for ngx_src in $ngx_core_srcs
++do
++    if [ $ngx_src != "src${ngx_dirsep}core${ngx_dirsep}nginx.c" ]; then
++        ngx_lib_srcs="$ngx_lib_srcs $ngx_src "
++    fi
++done
++
++ngx_lib_objs=`echo $ngx_lib_srcs \
++    | sed -e "s#\([^ ]*\.\)cpp#$NGX_OBJS\/\1$ngx_objext#g" \
++          -e "s#\([^ ]*\.\)cc#$NGX_OBJS\/\1$ngx_objext#g" \
++          -e "s#\([^ ]*\.\)c#$NGX_OBJS\/\1$ngx_objext#g" \
++          -e "s#\([^ ]*\.\)S#$NGX_OBJS\/\1$ngx_objext#g"`
++
++ngx_lib_deps=`echo $ngx_lib_objs \
++    | sed -e "s/  *\([^ ][^ ]*\)/$ngx_regex_cont\1/g" \
++          -e "s/\//$ngx_regex_dirsep/g"`
++
+ cat << END                                                    >> $NGX_MAKEFILE
+ 
++$NGX_OBJS${ngx_dirsep}libngx${ngx_libext}:	$ngx_lib_deps$ngx_spacer
++	\$(AR) ${ngx_long_start}$NGX_OBJS${ngx_dirsep}libngx${ngx_libext}$ngx_long_cont$ngx_lib_deps$ngx_spacer
++	\$(RANLIB) $NGX_OBJS${ngx_dirsep}libngx${ngx_libext}
++${ngx_long_end}
++
+ $NGX_OBJS${ngx_dirsep}nginx${ngx_binext}:	$ngx_deps$ngx_spacer
+ 	\$(LINK) ${ngx_long_start}${ngx_binout}$NGX_OBJS${ngx_dirsep}nginx$ngx_long_cont$ngx_objs$ngx_libs$ngx_link$NGX_EXTEND_LD_OPT
+ 	$ngx_rcc
+ ${ngx_long_end}
++
+ END
+ 
+ 
+diff -urN a/examples/Makefile b/examples/Makefile
+--- a/examples/Makefile	1970-01-01 07:00:00.000000000 +0700
++++ b/examples/Makefile	2012-10-26 22:13:06.000000000 +0800
+@@ -0,0 +1,56 @@
++# Makefile for Fedora platform
++# Modify it, if needed
++
++#LIBNGX_BASE_DIR=/usr/local
++LIBNGX_BASE_DIR=/tmp/nginx
++LIBNGX_DIR= $(LIBNGX_BASE_DIR)/lib
++LIBNGX_INCS= $(LIBNGX_BASE_DIR)/include
++
++CC= gcc
++CFLAGS= -O2 -I. -I$(LIBNGX_INCS)
++#SYSLIB= -L$(LIBNGX_DIR) -lngx -lpthread -lcrypt -lpcre -lcrypto -lz
++SYSLIB= -L$(LIBNGX_DIR) -lngx -lpthread
++STRIP= strip
++
++C_FILES= \
++	stringtest.c \
++	pooltest.c
++
++O_FILES= $(C_FILES:.c=.o)
++
++default:
++	@echo "                                                       "
++	@echo "  Usage:                                               "
++	@echo "                                                       "
++	@echo "    make all [LIBNGX_BASE_DIR='/base/path/to/libngx']  "
++	@echo "                                                       "
++	@echo "    make test                                          "
++	@echo "                                                       "
++
++
++TESTS= \
++	stringtest \
++	pooltest
++
++
++all: $(TESTS)
++
++test: all
++	for t in $(TESTS); do echo "**** Runing $$t"; ./$$t || exit 1; done
++
++stringtest: stringtest.o
++	$(CC) -o $@ $< $(SYSLIB)
++	$(STRIP) $@
++
++pooltest: pooltest.o
++	$(CC) -o $@ $< $(SYSLIB)
++	$(STRIP) $@
++
++%.o: %.c
++	$(CC) -c -o $@ $(CFLAGS) $< 
++
++.PHONY: clean test
++
++clean:
++	rm -f $(TESTS) *.o *~
++
+diff -urN a/examples/pooltest.c b/examples/pooltest.c
+--- a/examples/pooltest.c	1970-01-01 07:00:00.000000000 +0700
++++ b/examples/pooltest.c	2014-04-07 19:09:50.532599011 +0800
+@@ -0,0 +1,53 @@
++
++#include <ngx_config.h>
++#include <ngx_core.h>
++
++#include <stdio.h>
++
++
++void 
++ngx_log_error_core(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
++    const char *fmt, ...)
++{
++
++}
++
++
++void 
++dump_pool(ngx_pool_t* pool)
++{
++    while (pool)
++    {
++        printf("\tpool = 0x%x\n", pool);
++        printf("\tpool->d.last = 0x%x\n", pool->d.last);
++        printf("\tpool->d.end = 0x%x\n", pool->d.end);
++        printf("\tpool->d.next = 0x%x\n", pool->d.next);
++        printf("\tpool->d.failed = %d\n", pool->d.failed);
++        printf("\tpool->max = %d\n", pool->max);
++        printf("\tpool->current = 0x%x\n", pool->current);
++        printf("\tpool->chain = 0x%x\n", pool->chain);
++        printf("\tpool->large = 0x%x\n", pool->large);
++        printf("\tpool->cleanup = 0x%x\n", pool->cleanup);
++        printf("\tpool->log = 0x%x\n\n", pool->log);
++
++        pool = pool->d.next;
++    }
++
++}
++
++
++int 
++main(int argc, char *argv[])
++{
++    ngx_uint_t   pool_size = 1024;
++    ngx_pool_t  *pool;
++
++    printf("\ncreate a new pool of %u bytes: \n", pool_size);
++    pool = ngx_create_pool(pool_size, NULL);
++    dump_pool(pool);
++
++    ngx_destroy_pool(pool);
++
++    return 0;
++}
++
+diff -urN a/examples/stringtest.c b/examples/stringtest.c
+--- a/examples/stringtest.c	1970-01-01 07:00:00.000000000 +0700
++++ b/examples/stringtest.c	2012-10-26 22:13:06.000000000 +0800
+@@ -0,0 +1,17 @@
++
++#include <ngx_config.h>
++#include <ngx_core.h>
++
++#include <stdio.h>
++
++
++int 
++main(int argc, char *argv[]) 
++{
++    ngx_str_t t = ngx_string("Hello, world!");
++
++    printf("\nt.len = %zu\nt.data = %s\n\n", t.len, t.data);
++
++    return 0;
++}
++

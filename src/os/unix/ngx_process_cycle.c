@@ -20,7 +20,7 @@ static void ngx_signal_worker_processes(ngx_cycle_t *cycle, int signo);
 static ngx_uint_t ngx_reap_children(ngx_cycle_t *cycle);
 static void ngx_master_process_exit(ngx_cycle_t *cycle);
 static void ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data);
-static void ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority);
+static void ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker);
 static void ngx_worker_process_exit(ngx_cycle_t *cycle);
 static void ngx_channel_handler(ngx_event_t *ev);
 #if (NGX_THREADS)
@@ -62,7 +62,6 @@ ngx_int_t              ngx_threads_n;
 #endif
 
 
-uint64_t       cpu_affinity;
 static u_char  master_process[] = "master process";
 
 
@@ -356,14 +355,14 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
 
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "start worker processes");
 
+    ngx_memzero(&ch, sizeof(ngx_channel_t));
+
     ch.command = NGX_CMD_OPEN_CHANNEL;
 
     for (i = 0; i < n; i++) {
 
-        cpu_affinity = ngx_get_cpu_affinity(i);
-
-        ngx_spawn_process(cycle, ngx_worker_process_cycle, NULL,
-                          "worker process", type);
+        ngx_spawn_process(cycle, ngx_worker_process_cycle,
+                          (void *) (intptr_t) i, "worker process", type);
 
         ch.pid = ngx_processes[ngx_process_slot].pid;
         ch.slot = ngx_process_slot;
@@ -371,8 +370,6 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
 
         ngx_pass_open_channel(cycle, &ch);
     }
-
-    cpu_affinity = 0;
 }
 
 
@@ -405,6 +402,8 @@ ngx_start_cache_manager_processes(ngx_cycle_t *cycle, ngx_uint_t respawn)
     ngx_spawn_process(cycle, ngx_cache_manager_process_cycle,
                       &ngx_cache_manager_ctx, "cache manager process",
                       respawn ? NGX_PROCESS_JUST_RESPAWN : NGX_PROCESS_RESPAWN);
+
+    ngx_memzero(&ch, sizeof(ngx_channel_t));
 
     ch.command = NGX_CMD_OPEN_CHANNEL;
     ch.pid = ngx_processes[ngx_process_slot].pid;
@@ -464,6 +463,8 @@ ngx_signal_worker_processes(ngx_cycle_t *cycle, int signo)
     ngx_int_t      i;
     ngx_err_t      err;
     ngx_channel_t  ch;
+
+    ngx_memzero(&ch, sizeof(ngx_channel_t));
 
 #if (NGX_BROKEN_SCM_RIGHTS)
 
@@ -535,7 +536,7 @@ ngx_signal_worker_processes(ngx_cycle_t *cycle, int signo)
         }
 
         ngx_log_debug2(NGX_LOG_DEBUG_CORE, cycle->log, 0,
-                       "kill (%P, %d)" , ngx_processes[i].pid, signo);
+                       "kill (%P, %d)", ngx_processes[i].pid, signo);
 
         if (kill(ngx_processes[i].pid, signo) == -1) {
             err = ngx_errno;
@@ -565,6 +566,8 @@ ngx_reap_children(ngx_cycle_t *cycle)
     ngx_uint_t        live;
     ngx_channel_t     ch;
     ngx_core_conf_t  *ccf;
+
+    ngx_memzero(&ch, sizeof(ngx_channel_t));
 
     ch.command = NGX_CMD_CLOSE_CHANNEL;
     ch.fd = -1;
@@ -652,7 +655,7 @@ ngx_reap_children(ngx_cycle_t *cycle)
 
                 if (ngx_rename_file((char *) ccf->oldpid.data,
                                     (char *) ccf->pid.data)
-                    != NGX_OK)
+                    == NGX_FILE_ERROR)
                 {
                     ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                                   ngx_rename_file_n " %s back to %s failed "
@@ -711,6 +714,7 @@ ngx_master_process_exit(ngx_cycle_t *cycle)
 
     ngx_exit_log = *ngx_cycle->log;
     ngx_exit_log.file = &ngx_exit_log_file;
+    ngx_exit_log.next = NULL;
 
     ngx_exit_cycle.log = &ngx_exit_log;
     ngx_exit_cycle.files = ngx_cycle->files;
@@ -726,12 +730,14 @@ ngx_master_process_exit(ngx_cycle_t *cycle)
 static void
 ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 {
+    ngx_int_t worker = (intptr_t) data;
+
     ngx_uint_t         i;
     ngx_connection_t  *c;
 
     ngx_process = NGX_PROCESS_WORKER;
 
-    ngx_worker_process_init(cycle, 1);
+    ngx_worker_process_init(cycle, worker);
 
     ngx_setproctitle("worker process");
 
@@ -837,9 +843,10 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 
 
 static void
-ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
+ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
 {
     sigset_t          set;
+    uint64_t          cpu_affinity;
     ngx_int_t         n;
     ngx_uint_t        i;
     struct rlimit     rlmt;
@@ -853,7 +860,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
 
-    if (priority && ccf->priority != 0) {
+    if (worker >= 0 && ccf->priority != 0) {
         if (setpriority(PRIO_PROCESS, 0, ccf->priority) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           "setpriority(%d) failed", ccf->priority);
@@ -917,8 +924,12 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
         }
     }
 
-    if (cpu_affinity) {
-        ngx_setaffinity(cpu_affinity, cycle->log);
+    if (worker >= 0) {
+        cpu_affinity = ngx_get_cpu_affinity(worker);
+
+        if (cpu_affinity) {
+            ngx_setaffinity(cpu_affinity, cycle->log);
+        }
     }
 
 #if (NGX_HAVE_PR_SET_DUMPABLE)
@@ -947,6 +958,8 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
         ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                       "sigprocmask() failed");
     }
+
+    srandom((ngx_pid << 16) ^ ngx_time());
 
     /*
      * disable deleting previous events for the listening sockets because
@@ -1056,6 +1069,7 @@ ngx_worker_process_exit(ngx_cycle_t *cycle)
 
     ngx_exit_log = *ngx_cycle->log;
     ngx_exit_log.file = &ngx_exit_log_file;
+    ngx_exit_log.next = NULL;
 
     ngx_exit_cycle.log = &ngx_exit_log;
     ngx_exit_cycle.files = ngx_cycle->files;
@@ -1294,13 +1308,18 @@ ngx_cache_manager_process_cycle(ngx_cycle_t *cycle, void *data)
     void         *ident[4];
     ngx_event_t   ev;
 
-    cycle->connection_n = 512;
-
+    /*
+     * Set correct process type since closing listening Unix domain socket
+     * in a master process also removes the Unix domain socket file.
+     */
     ngx_process = NGX_PROCESS_HELPER;
 
-    ngx_worker_process_init(cycle, 0);
-
     ngx_close_listening_sockets(cycle);
+
+    /* Set a moderate number of connections for a helper process. */
+    cycle->connection_n = 512;
+
+    ngx_worker_process_init(cycle, -1);
 
     ngx_memzero(&ev, sizeof(ngx_event_t));
     ev.handler = ctx->handler;
